@@ -3,12 +3,14 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from pathlib import Path
 from datetime import datetime
+from battery import (
+    simulate_battery,
+    BATTERY_EFFICIENCY,
+    TRADING_COST
+)
 
 # global constant
-TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
-BATTERY_EFFICIENCY = 0.85                   
-SELF_DISCHARGE_RATE = 0.001                 
-TRADING_COST = 5                            # EUR
+TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"           
 
 def get_data_path():
     script_dir = Path(__file__).parent.parent
@@ -56,14 +58,14 @@ def calculate_hourly_changes(prices: list[float]) -> list[float]:
     return hourly_changes
 
 
-def calculate_average_absolute_price_change(prices: list[float]) -> float:
-    if len(prices) == 0:
+def calculate_average_absolute_price_change(price_changes: list[float]) -> float:
+    if len(price_changes) == 0:
         raise ValueError('List can\'t be empty')
     
     absolute_price_changes = []
 
-    for price in prices:
-        absolute_price_changes.append(abs(price))
+    for price_change in price_changes:
+        absolute_price_changes.append(abs(price_change))
     
     return sum(absolute_price_changes) / len(absolute_price_changes)
 
@@ -106,74 +108,16 @@ def find_best_trade(prices: list[float], efficiency: float, trading_cost: float)
 
     for buy_index in range(len(prices)):
         for sell_index in range(buy_index + 1, len(prices)):
-            profit = (efficiency * prices[sell_index] - prices[buy_index]) - trading_cost
+            profit = (
+                efficiency * (prices[sell_index] - trading_cost)
+                - (prices[buy_index] - trading_cost)
+            )
             if profit > best_profit:
                 best_profit = profit
                 best_buy_index = buy_index
                 best_sell_index = sell_index
 
     return best_profit, best_buy_index, best_sell_index
-
-def calculate_max_charge(
-    capacity_mwh: float,
-    power_mw: float,
-    hours: float,
-    current_energy_mwh: float
-) -> float:
-    if current_energy_mwh < 0 or current_energy_mwh > capacity_mwh:
-        raise ValueError("Current energy mwh must be between 0 (inclusive) and full capacity (inclusive)")
-    elif power_mw < 0 or hours < 0:
-        raise ValueError("Hours and Power MW needs to be over 0 (inclusive)")
-
-    remaining_capacity = capacity_mwh - current_energy_mwh
-    return min( power_mw * hours , remaining_capacity)
-
-
-def calculate_max_discharge(
-    power_mw: float,
-    hours: float,
-    current_energy_mwh: float,
-) -> float:
-    if current_energy_mwh < 0:
-        raise ValueError("Current energy mwh must be over 0 (inclusive)")
-    elif power_mw < 0 or hours < 0:
-        raise ValueError("Hours and Power MW needs to be over 0 (inclusive)")
-    
-    return min(power_mw * hours, current_energy_mwh)
-
-
-def calculate_sellable_energy(sellable_energy: float, efficiency: float) -> float:
-    if efficiency <= 0 or efficiency > 1:
-        raise ValueError("Efficiency must be between 0 (exclusive) and 1 (inclusive)")
-    elif sellable_energy < 0:
-        raise ValueError("Dischargeble energy needs to be over 0 (inclusive)")
-
-    return sellable_energy * efficiency
-
-
-def calculate_hourly_self_discharge(
-    current_energy_mwh: float, self_discharge_rate: float
-) -> float:
-    if self_discharge_rate < 0 or self_discharge_rate > 1:
-        raise ValueError("Self-discharge rate must be between 0 (inclusive) and 1 (inclusive)")
-    elif current_energy_mwh < 0:
-        raise ValueError("Current energy MWh needs to be over 0 (inclusive)")
-    return - current_energy_mwh * self_discharge_rate
-
-
-def update_energy_battery(
-    current_energy_mwh: float,
-    energy_change_mwh: float,
-    capacity_mwh: float
-) -> float:
-    if current_energy_mwh < 0 or current_energy_mwh > capacity_mwh:
-        raise ValueError(f'Battery SOC is over capacity ({capacity_mwh}) or below 0')
-    battery_mwh = current_energy_mwh + energy_change_mwh
-    if battery_mwh < 0:
-        raise ValueError(f'Battery can\'t be discharged more than the {current_energy_mwh}')
-    elif battery_mwh > capacity_mwh:
-        raise ValueError(f'Battery can\'t be charged more than {capacity_mwh}')
-    return battery_mwh
 
 
 def main():
@@ -242,58 +186,9 @@ def main():
     for date, prices in daily_prices.items():
         daily_best_trades[date] = find_best_trade(prices, BATTERY_EFFICIENCY, TRADING_COST)
 
-    capacity_mwh = 100
-    power_mw = 25
-    current_energy_mwh = 20
-    hours = 1
-    sell_price = 100
-    buy_price = 30
 
-    max_charge = calculate_max_charge(capacity_mwh, power_mw, hours, current_energy_mwh)
-    current_energy_mwh = update_energy_battery(current_energy_mwh, max_charge, capacity_mwh)
-
-    max_discharge = calculate_max_discharge(power_mw, hours, current_energy_mwh)
-    energy_sold = calculate_sellable_energy(max_discharge, BATTERY_EFFICIENCY)
-    current_energy_mwh = update_energy_battery(current_energy_mwh, -max_discharge, capacity_mwh)
-    state_of_charge = current_energy_mwh/capacity_mwh * 100
-    purchase_cost = buy_price * max_charge
-    sales_revenue = sell_price * energy_sold
-    profit = sales_revenue - purchase_cost
-
-    action_prices = [30, 35, 60, 100, 80]
-    actions = ["buy", "buy", "hold", "sell", "sell"]
-
-    total_profit = 0
-    capacity_mwh = 100
-    power_mw = 25
-    current_energy_mwh = 0
-    hours = 1
-
-    for i, price in enumerate(action_prices):
-        if actions[i] == "buy":
-            energy_change = calculate_max_charge(capacity_mwh, power_mw, hours, current_energy_mwh)
-            current_energy_mwh = update_energy_battery(current_energy_mwh, energy_change, capacity_mwh)
-            total_profit = total_profit - energy_change * price
-        elif actions[i] == "sell":
-            energy_change = calculate_max_discharge(power_mw, hours, current_energy_mwh)
-            current_energy_mwh = update_energy_battery(current_energy_mwh, -energy_change, capacity_mwh)
-            energy_sold = calculate_sellable_energy(energy_change, BATTERY_EFFICIENCY)
-            total_profit = total_profit + energy_sold * price
-        elif actions[i] == "hold":
-            pass
-
-        discharge_loss = calculate_hourly_self_discharge(current_energy_mwh, SELF_DISCHARGE_RATE)
-        current_energy_mwh = update_energy_battery(current_energy_mwh, discharge_loss, capacity_mwh)
-        print(f'Hour {i:02} | {actions[i].capitalize()} | Price: {price} | SOC: {(current_energy_mwh / capacity_mwh * 100):.2f} %')
-
-    
-    print(f'Total profit: {total_profit} EUR')
-
-
-    print(f'SOC: {state_of_charge} %')
-    print(f'Purchase cost: {purchase_cost} EUR')
-    print(f'Sales revenue: {sales_revenue} EUR')
-    print(f'Profit: {profit} EUR')
+    real_profit, soc_history, profit_history = simulate_battery(energy_prices)
+    print(f'Total profit: {real_profit:.2f} EUR')
 
     print('Output:')
     print(f'Negative price hours: {negative_hours}')
@@ -321,35 +216,41 @@ def main():
         profit, buy_index, sell_index = trade
         print(f'{date}: Profit {profit:.2f} EUR | Buy: {buy_index} | Sell: {sell_index}')
 
-    plt.plot(datetime_timestamps, energy_prices, label = "Hourly price", c = 'b')
-    plt.plot(datetime_timestamps, hourly_daily_averages, 
+    fig, axs = plt.subplots(2,2, figsize=(15, 10))
+
+    axs[0,0].plot(datetime_timestamps, energy_prices, label = "Hourly price", c = 'b')
+    axs[0,0].plot(datetime_timestamps, hourly_daily_averages, 
         linestyle = '--', label = 'Average price by day', linewidth = 2, c = 'r'
     )
-    plt.title('Pris pr time')
-    ax = plt.gca()
-    ax.xaxis.set_major_locator(mdates.DayLocator())
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%d-%m'))
-    plt.ylabel('EUR/MWh')
-    plt.legend()
-    plt.grid(axis= 'y')
+    axs[0,0].set_title('Price per hour')
+    axs[0,0].xaxis.set_major_locator(mdates.DayLocator())
+    axs[0,0].xaxis.set_major_formatter(mdates.DateFormatter('%d-%m'))
+    axs[0,0].set_ylabel('EUR/MWh')
+    axs[0,0].set_xlabel('Date')
+    axs[0,0].legend()
+    axs[0,0].grid(axis = 'y')
+
+    axs[0,1].plot(datetime_timestamps, soc_history, c = 'g')
+    axs[0,1].set_title('State of charge')
+    axs[0,1].xaxis.set_major_locator(mdates.DayLocator())
+    axs[0,1].xaxis.set_major_formatter(mdates.DateFormatter('%d-%m'))
+    axs[0,1].set_ylabel('SoC %')
+    axs[0,1].set_xlabel('Date')
+    axs[0,1].set_ylim([0,100])
+    axs[0,1].grid(c = 'gray', linestyle = '--')
+
+    axs[1,0].plot(datetime_timestamps, profit_history, c = 'gold')
+    axs[1,0].set_title('Profit history')
+    axs[1,0].xaxis.set_major_locator(mdates.DayLocator())
+    axs[1,0].xaxis.set_major_formatter(mdates.DateFormatter('%d-%m'))
+    axs[1,0].set_ylabel('EUR')
+    axs[1,0].set_xlabel('Date')
+    axs[1,0].grid()
+
+    axs[1,1].axis('off')
+
+    plt.tight_layout()
     plt.show()
-
-assert count_negative_hours([10, -5, 0, -2, 20]) == 2
-assert calculate_hourly_changes([20, 35, 10, 50]) == [15, -25, 40]
-
-assert find_best_trade([40, 100], 0.85, 5) == (40.0, 0, 1)
-
-assert find_best_trade([40, 50], 0.85, 5) == (0.0, None, None)
-
-assert find_best_trade([30, 90], 1.0, 0) == (60.0, 0, 1)
-
-assert calculate_max_charge(100, 25, 2, 70) == 30
-assert calculate_max_charge(100, 25, 2, 20) == 50
-assert calculate_max_charge(100, 25, 2, 100) == 0
-
-assert calculate_max_discharge(25, 2, 40) == 40
-assert calculate_max_discharge(25, 1, 70) == 25
-assert calculate_max_discharge(25, 2, 0) == 0
 
 if __name__ == "__main__":
     main()
