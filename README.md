@@ -35,7 +35,7 @@ The project also inclues electricity price statistics, daily analysis, visualiza
 ### 1. Clone the repository
 
 ```bash
-git clone <https://github.com/emilfalkenberg/power-trading-lab>
+git clone https://github.com/emilfalkenberg/power-trading-lab
 cd power-trading-lab
 ```
 
