@@ -6,7 +6,8 @@ from datetime import datetime
 from battery import (
     simulate_battery,
     BATTERY_EFFICIENCY,
-    TRADING_COST
+    TRADING_COST,
+    CAPACITY_MWH
 )
 
 # global constant

@@ -4,7 +4,7 @@ BATTERY_EFFICIENCY = 0.85
 CAPACITY_MWH = 100
 POWER_MW = 25
 HOURS = 1
-SELF_DISCHARGE_RATE = 0.001
+SELF_DISCHARGE_RATE = 0
 TRADING_COST = 5                            # EUR / MWh
 
 def calculate_max_charge(
