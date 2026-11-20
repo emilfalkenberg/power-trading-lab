@@ -34,3 +34,23 @@ def test_duplicate_timestamp(valid_market_data):
     # Verify that validation rejects the data
     with pytest.raises(ValueError, match="Duplicate UTC timestamps found"):
         validate_market_data(df_copy)
+
+def test_valid_market_data(valid_market_data):
+    validate_market_data(valid_market_data)
+
+
+def test_missing_hour(valid_market_data):
+    df_copy = valid_market_data.copy()
+
+    df_copy = df_copy.drop(index=1)
+
+    with pytest.raises(ValueError, match="Missing 1 hourly timestamp"):
+        validate_market_data(df_copy)
+
+def test_incorret_chronological_order(valid_market_data):
+    df_copy = valid_market_data.copy()
+    
+    df_copy = df_copy.iloc[[0, 2, 1, *range(3, len(df_copy))]]
+
+    with pytest.raises(ValueError, match="Expected consecutive hourly timestamps"):
+        validate_market_data(df_copy)

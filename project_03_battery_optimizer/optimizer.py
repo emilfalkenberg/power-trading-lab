@@ -26,6 +26,9 @@ def optimize_battery(
 
     buying_coefficients = [price + trading_cost for price in prices]
     sell_coefficients = [- efficiency * (price - trading_cost) for price in prices]
+    # Charging and discharging are limited by the battery's rated power.
+    # Discharge efficiency reduces the energy delivered to the grid.
+    # Grid connection constraints are not included in this model.
     max_energy_mwh = power_mw * hours_per_period
     c = buying_coefficients + sell_coefficients + [0] * n
     lb = [0] * (3 * n)
@@ -77,7 +80,6 @@ def optimize_battery(
     if result.success:
         charge = result.x[:n].tolist()
         discharge = result.x[n:2*n].tolist()
-        z = result.x[2*n:].tolist()
 
         current_energy_mwh = 0
         energy_history = []
